@@ -1,0 +1,14 @@
+services:
+  orderlab-mono-db:
+    image: postgres:18
+    container_name: orderlab-mono-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - orderlab-mono-db_data:/var/lib/postgresql
+volumes:
+  orderlab-mono-db_data:
