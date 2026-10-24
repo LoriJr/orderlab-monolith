@@ -3,12 +3,11 @@ package com.viratech.models;
 import com.viratech.enums.NotificationStatus;
 
 import java.time.Instant;
-import java.util.UUID;
 
 public class NotificationTask {
 
-    private UUID id;
-    private UUID orderId;
+    private Long id;
+    private Long orderId;
     private String consumerEmail;
     private String content;
     private NotificationStatus status;
