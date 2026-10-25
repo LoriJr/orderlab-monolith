@@ -40,7 +40,7 @@ public class Order {
             cascade = CascadeType.ALL,
             fetch = FetchType.LAZY
     )
-    private List<OrderItem> items = new ArrayList<>();;
+    private List<OrderItem> items = new ArrayList<>();
 
     public void addItem(OrderItem item){
         items.add(item);

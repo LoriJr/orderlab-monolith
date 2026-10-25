@@ -16,6 +16,6 @@ public record OrderItemRequest(
 
         @NotNull
         @DecimalMin("0.00")
-        @Digits(integer = 19, fraction = 2)
+        @Digits(integer = 17, fraction = 2)
         BigDecimal unitPrice
 ) {}

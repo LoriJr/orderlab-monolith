@@ -8,13 +8,10 @@ public record NotificationTaskResponse(
 
         Long id,
         Long orderId,
-        String consumerEmail,
-        String content,
         NotificationStatus status,
         Integer attempts,
         Instant createdAt,
         Instant startedAt,
-        Instant completedAt,
-        String lastError
+        Instant completedAt
 ) {
 }
