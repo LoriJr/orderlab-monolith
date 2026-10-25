@@ -27,12 +27,13 @@ public class Order {
     @Column(name = "customer_email", nullable = false, length = 254)
     private String customerEmail;
 
-    @Column(name = "total_amount", precision = 19, scale = 2)
+    @Column(name = "total_amount", precision = 19, scale = 2, nullable = false)
     private BigDecimal totalAmount;
 
-    @Column(name = "created_at")
+    @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    @Builder.Default
     @OneToMany(
             mappedBy = "order",
             orphanRemoval = true,
