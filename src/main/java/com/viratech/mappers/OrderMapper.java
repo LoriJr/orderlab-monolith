@@ -1,4 +1,4 @@
-package com.viratech.mapper;
+package com.viratech.mappers;
 
 import com.viratech.dtos.CreateOrderRequest;
 import com.viratech.dtos.OrderItemResponse;
