@@ -4,6 +4,10 @@ spring:
   application:
     name: orderlab
 
+  notification:
+    simulator:
+      base-url: http://localhost:9091
+
   datasource:
     url: jdbc:postgresql://localhost:5432/${POSTGRES_DB}
     driver-class-name: org.postgresql.Driver
