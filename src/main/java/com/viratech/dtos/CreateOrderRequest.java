@@ -18,6 +18,5 @@ public record CreateOrderRequest(
 
         @NotEmpty
         @Valid
-        @NotNull
-        List<OrderItemRequest> items
+        List<@NotNull OrderItemRequest> items
 ) {}
