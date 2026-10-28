@@ -15,7 +15,7 @@ import java.math.BigDecimal;
 
 @Service
 @RequiredArgsConstructor
-public class OrderService {
+public class OrderCreationService {
 
     private final OrderRepository orderRepository;
     private final OrderMapper orderMapper;
