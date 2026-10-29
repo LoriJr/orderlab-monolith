@@ -3,6 +3,7 @@ package com.viratech.controllers;
 import com.viratech.dtos.CreateOrderRequest;
 import com.viratech.dtos.OrderResponse;
 import com.viratech.services.OrderCreationService;
+import com.viratech.services.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -17,13 +18,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class OrderController {
 
-    private final OrderCreationService orderCreationService;
+    private final OrderService orderService;
 
     @PostMapping
     public ResponseEntity<OrderResponse> createOrder(
             @Valid
             @RequestBody CreateOrderRequest request){
-        OrderResponse response = orderCreationService.createOrder(request);
+        OrderResponse response = orderService.createOrder(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 }

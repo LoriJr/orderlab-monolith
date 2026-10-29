@@ -1,7 +1,7 @@
 package com.viratech.services;
 
 import com.viratech.dtos.CreateOrderRequest;
-import com.viratech.dtos.OrderResponse;
+import com.viratech.dtos.OrderCreationResult;
 import com.viratech.mappers.OrderMapper;
 import com.viratech.models.NotificationTask;
 import com.viratech.models.Order;
@@ -24,7 +24,7 @@ public class OrderCreationService {
     private static final BigDecimal MAX_TOTAL_AMOUNT = new BigDecimal("99999999999999999.99");
 
     @Transactional
-    public OrderResponse createOrder(CreateOrderRequest request){
+    public OrderCreationResult createOrder(CreateOrderRequest request){
         Order order = orderMapper.createOrderRequestEntity(request);
 
         BigDecimal totalAmount = order.getItems()
@@ -46,8 +46,11 @@ public class OrderCreationService {
                 .consumerEmail(savedOrder.getCustomerEmail())
                 .content("Order: " + savedOrder.getId())
                 .build();
-        notificationTaskRepository.save(task);
 
-        return orderMapper.createOrderResponseDto(savedOrder);
+        NotificationTask savedTask = notificationTaskRepository.save(task);
+
+        return new OrderCreationResult(
+                orderMapper.createOrderResponseDto(savedOrder),
+                savedTask.getId());
     }
 }

@@ -14,7 +14,7 @@ public class NotificationClient {
 
     public NotificationClient(
             @Value("${notification.simulator.base-url}")
-            String baseUrl, RestClient restClient
+            String baseUrl
     ){
         var factory = new SimpleClientHttpRequestFactory();
                 factory.setConnectTimeout(2000);
@@ -28,7 +28,7 @@ public class NotificationClient {
 
     public void send(Long taskId, NotificationRequest request){
         restClient.post()
-                .uri("api/v1/notifications")
+                .uri("/api/v1/notifications")
                 .header("Idempotency-Key", taskId.toString())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(request)
