@@ -17,6 +17,5 @@ public record CreateOrderRequest(
         String customerEmail,
 
         @NotEmpty
-        @Valid
-        List<@NotNull OrderItemRequest> items
+        List<@NotNull @Valid OrderItemRequest> items
 ) {}
