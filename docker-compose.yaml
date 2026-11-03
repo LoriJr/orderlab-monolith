@@ -2,13 +2,106 @@ services:
   orderlab-mono-db:
     image: postgres:18
     container_name: orderlab-mono-db
+
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+
     ports:
       - "5432:5432"
     volumes:
       - orderlab-mono-db_data:/var/lib/postgresql
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  notification-simulator:
+    image: notification-simulator-app
+    build:
+      context: ../notification-simulator
+      dockerfile: Dockerfile
+      network: host
+      entitlements:
+        - network.host
+
+    environment:
+      SIMULATOR_DELAY_MS: ${SIMULATOR_DELAY_MS:-1000}
+      SIMULATOR_FAIL_ENABLED: ${SIMULATOR_FAIL_ENABLED:-false}
+
+    ports:
+      - "127.0.0.1:9091:9091"
+
+  orderlab:
+    image: orderlab-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: host
+      entitlements:
+        - network.host
+
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://orderlab-mono-db:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      NOTIFICATION_SIMULATOR_BASE_URL: http://notification-simulator:9091
+
+    ports:
+      - "127.0.0.1:9090:9090"
+
+    depends_on:
+      orderlab-mono-db:
+        condition: service_healthy
+      notification-simulator:
+        condition: service_started
+
+  prometheus:
+    image: prom/prometheus:latest
+
+    ports:
+      - "127.0.0.1:9092:9090"
+
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+
+  grafana:
+    image: grafana/grafana:latest
+
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Defina GRAFANA_ADMIN_PASSWORD}
+
+    ports:
+      - "127.0.0.1:3000:3000"
+
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - type: bind
+        source: ./monitoring/grafana/datasources.yml
+        target: /etc/grafana/provisioning/datasources/prometheus.yml
+        read_only: true
+        bind:
+          create_host_path: false
+
+
+    depends_on:
+      prometheus:
+        condition: service_started
+
 volumes:
   orderlab-mono-db_data:
+  prometheus_data:
+  grafana_data:
