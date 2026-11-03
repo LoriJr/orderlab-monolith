@@ -1,163 +1,246 @@
 # OrderLab
 
-API experimental de pedidos e notificações desenvolvida como apoio a um Trabalho de Conclusão de Curso em Engenharia de Software.
-
-O projeto investigará em quais condições a extração do processamento de notificações oferece benefícios adicionais ao processamento assíncrono dentro de um monólito, considerando desempenho, consumo de recursos e esforço operacional.
+API experimental de pedidos e notificações para o TCC «Evolução de monólito para microsserviços: critérios quantitativos e qualitativos para extração de serviço».
 
 ## Estágio atual
 
-O projeto está na fase de definição e implementação inicial do monólito base. A documentação da pesquisa está em avaliação pelo orientador; o escopo e o protocolo experimental poderão receber ajustes.
+A Variante A implementa a criação de pedidos e uma tentativa síncrona de notificação. O ambiente integrado inclui PostgreSQL, simulador HTTP, Prometheus e Grafana. As execuções atuais são pilotos de preparação; não constituem a coleta oficial do estudo.
 
-Este README descreve o planejamento atual. Endpoints, componentes e procedimentos apresentados abaixo são previstos e não representam funcionalidades já verificadas no repositório.
-
-## Variantes previstas
-
-| Variante | Organização | Processamento da notificação |
+| Variante | Organização | Situação |
 | --- | --- | --- |
-| A — ponto de partida | Monólito modular | Síncrono, antes da resposta à requisição |
-| B | Monólito modular | Assíncrono, no mesmo processo da API |
-| C | API e serviço de notificações em processos separados | Assíncrono, no serviço extraído |
+| A | Monólito com tentativa síncrona | Implementada no fluxo de criação |
+| B | Processamento assíncrono persistido no mesmo processo | Planejada |
+| C | Processamento assíncrono em serviço separado | Planejada |
 
-A comparação entre A e B avaliará os efeitos da assincronia. A comparação principal entre B e C avaliará os efeitos adicionais da extração, mantendo recursos totais e limite de processamento simultâneo equivalentes.
+A comparação A × B avaliará a assincronia; B × C avaliará a extração com recursos e concorrência controlados. O estudo não pressupõe vantagem de microsserviços. O banco compartilhado planejado para C continuará sendo uma dependência comum.
 
-A pesquisa não pressupõe que a extração será vantajosa. Resultados favoráveis, desfavoráveis e inconclusivos serão considerados.
+## Tecnologias e organização
 
-## Tecnologias previstas
+Java 21, Spring Boot 4.1.1, Web MVC, Validation, Data JPA, PostgreSQL 18, Lombok, Actuator, Micrometer Prometheus, Maven, Docker Compose e Buildx/Bake.
 
-- Java 21 e Spring Boot;
-- Spring Web, Bean Validation e Spring Data JPA;
-- PostgreSQL e migrações versionadas de banco;
-- Maven;
-- Docker e Docker Compose;
-- JUnit, Mockito e Testcontainers;
-- k6 para geração de carga na etapa experimental.
+O pacote base é `com.viratech`, organizado em `clients`, `controllers`, `dtos`, `enums`, `mappers`, `models`, `repositories` e `services`. A organização atual é em camadas; não há pacotes de módulos de negócio separados.
 
-As versões e dependências efetivamente utilizadas serão registradas nos arquivos de configuração do projeto.
-
-## Escopo inicial
-
-- Criar pedidos com itens e calcular o valor total;
-- consultar pedidos por identificador;
-- listar pedidos com paginação;
-- persistir e consultar tarefas de notificação;
-- executar uma tentativa síncrona de notificação na variante A;
-- integrar com um simulador HTTP de envio.
-
-Autenticação, pagamentos, estoque, catálogo de produtos, cadastro de clientes e interface gráfica ficam fora do escopo inicial. Os testes utilizarão dados sintéticos e não haverá envio de e-mails reais.
-
-## Modelo de dados previsto
-
-| Entidade | Responsabilidade | Campos iniciais |
-| --- | --- | --- |
-| `Pedido` | Registrar o pedido e seu destinatário | `id`, `nomeDestinatario`, `emailDestino`, `valorTotal`, `criadoEm` |
-| `ItemPedido` | Registrar os itens de um pedido | `id`, `pedidoId`, `descricao`, `quantidade`, `valorUnitario` |
-| `TarefaNotificacao` | Registrar o processamento da notificação | `id`, `pedidoId`, `destinatario`, `conteudo`, `status`, `tentativas`, `criadaEm`, `iniciadaEm`, `concluidaEm`, `ultimoErro` |
-
-Valores monetários serão representados por `BigDecimal`, e os instantes dos eventos por `Instant`.
-
-A tarefa armazenará uma cópia do destinatário e do conteúdo necessário ao envio. Isso permitirá processá-la sem consultar os dados de negócio do pedido.
-
-### Estados da tarefa
-
-| Estado | Significado |
+| Entidade | Responsabilidade |
 | --- | --- |
-| `PENDING` | Tarefa registrada, aguardando processamento |
-| `PROCESSING` | Tentativa em execução |
-| `COMPLETED` | Simulador confirmou a conclusão |
-| `FAILED` | Tentativa falhou |
+| `Order` | Cliente, valor total, data e itens do pedido |
+| `OrderItem` | Descrição, quantidade e preço unitário |
+| `NotificationTask` | Destinatário, conteúdo, estado, tentativas, datas e último erro |
 
-Esses estados pertencem à tarefa de notificação. Uma falha no envio não desfaz um pedido já confirmado.
+Os estados `PENDING`, `PROCESSING`, `COMPLETED` e `FAILED` pertencem à tarefa de notificação, não ao pedido.
 
-## Fluxo da variante A
+## Fluxo implementado
 
-1. Receber e validar a solicitação de criação do pedido.
-2. Calcular o valor total no servidor.
-3. Gravar pedido, itens e tarefa `PENDING` na mesma transação.
-4. Confirmar a transação.
-5. Executar a tentativa de notificação no mesmo processo da API, registrando seu resultado.
-6. Responder à requisição após a tentativa, informando o pedido criado e o estado da notificação.
+1. Validar a entrada e calcular o total no servidor.
+2. Gravar pedido, itens e tarefa `PENDING` na mesma transação.
+3. Confirmar a transação antes da comunicação externa.
+4. Registrar `PROCESSING`, incrementar tentativas e chamar o simulador.
+5. Registrar `COMPLETED` ou `FAILED` conforme o resultado observado pelo cliente.
+6. Retornar `201 Created` com os dados do pedido quando a criação e o tratamento da tentativa terminarem normalmente, inclusive nas falhas de comunicação tratadas.
 
-A transação de criação do pedido não permanecerá aberta durante a chamada HTTP ao simulador. O comportamento previsto é retornar `201 Created` quando o pedido tiver sido confirmado, inclusive se a tentativa de notificação falhar.
+A resposta não inclui o estado da tarefa. Não há retry automático nesta variante. Interrupções podem deixar tarefas intermediárias sem recuperação automática. O cliente usa timeout de conexão de 2000 ms e de leitura de 5000 ms; timeout não cancela necessariamente o processamento remoto.
 
-A versão inicial terá uma tentativa síncrona por criação de pedido. O processamento automático de pendências e a recuperação após interrupções serão desenvolvidos na variante B. A versão A ainda poderá deixar tarefas pendentes ou em processamento se houver interrupção do processo; esse comportamento deverá ser documentado.
+## Execução integrada com Docker Compose
 
-## Endpoints planejados
+### 1. Pré-requisitos e pastas
 
-| Método | Endpoint | Finalidade |
-| --- | --- | --- |
-| `POST` | `/pedidos` | Criar pedido e executar a tentativa síncrona |
-| `GET` | `/pedidos/{id}` | Consultar um pedido |
-| `GET` | `/pedidos?page=0&size=20` | Listar pedidos com paginação |
-| `GET` | `/pedidos/{id}/notificacao` | Consultar o estado da notificação |
+Execute os comandos em Bash no Linux/WSL, com Docker Engine acessível, Compose com suporte a `build.entitlements` (2.27.1 ou posterior) e Buildx/Bake. A primeira construção precisa de internet para baixar imagens e dependências. JDK e Maven locais não são necessários para a execução inteiramente em Docker.
 
-Os contratos de entrada, saída e erro serão documentados após a implementação.
+```bash
+docker version
+docker compose version
+docker buildx version
+```
 
-## Organização prevista
+O Compose fica na raiz do OrderLab. Seu `build.context: ../notification-simulator` pressupõe projetos em pastas irmãs. Não é uma exigência do Docker: ajuste o contexto se usar outra organização.
 
-Pacote base: `br.com.viratech`.
+| Arquivo relativo à pasta do OrderLab | Função |
+| --- | --- |
+| `docker-compose.yaml` | Orquestra os cinco serviços |
+| `Dockerfile` | Compila e executa o OrderLab |
+| `../notification-simulator/Dockerfile` | Compila e executa o simulador |
+| `monitoring/prometheus.yml` | Coleta das métricas |
+| `monitoring/grafana/datasources.yml` | Provisiona a fonte Prometheus |
 
-A aplicação será organizada nos módulos `pedido` e `notificacao`, com controllers, DTOs, serviços, modelos e repositórios. O cliente HTTP do simulador ficará no módulo de notificações. Configurações e tratamento de erros comuns ficarão em `compartilhado`.
+Em cada aplicação, `Dockerfile`, `pom.xml` e `src` devem estar na raiz do contexto correspondente. Os dois YAMLs de monitoramento devem ser arquivos, não diretórios.
 
-A interação entre módulos ocorrerá por serviços ou interfaces públicas. O módulo de pedidos não deverá alterar diretamente o repositório de notificações.
+### 2. Variáveis locais
 
-## Simulador de notificações
+Crie ou complete `.env` na pasta do OrderLab com valores literais, por exemplo:
 
-Um serviço HTTP de apoio representará o provedor externo de envio. Ele permitirá configurar atraso e falhas, registrar recebimentos e conclusões e reconhecer solicitações repetidas pelo identificador da tarefa.
+```dotenv
+POSTGRES_DB=orderlab
+POSTGRES_USER=orderlab
+POSTGRES_PASSWORD=defina_uma_senha_local
+GRAFANA_ADMIN_PASSWORD=defina_outra_senha_local
+SIMULATOR_DELAY_MS=1000
+SIMULATOR_FAIL_ENABLED=false
+```
 
-O mesmo simulador será utilizado nas três variantes. Ele será infraestrutura de apoio ao experimento; o processamento de notificações da variante A continuará dentro do monólito.
+Em banco existente, preserve as credenciais originais: mudar o `.env` não altera usuários de um volume já inicializado. Não versione senhas reais. O `.env-example` enviado ainda contém placeholders e não inclui Grafana e cenários; use o exemplo completo acima ao preencher seu `.env`.
 
-A preparação computacional configurável da notificação será executada pela aplicação responsável pelo processamento, antes da chamada ao simulador.
+### 3. Banco de dados: condição para a primeira execução
 
-## Persistência e controle de duplicações
+O projeto enviado utiliza `spring.jpa.hibernate.ddl-auto: validate`. Isso valida as tabelas, mas não as cria. O `pom.xml` atual não inclui Flyway, portanto scripts de migração não serão executados automaticamente por ele. O Compose também não configura scripts de inicialização do esquema.
 
-O identificador da tarefa será enviado ao simulador como chave de idempotência. O experimento distinguirá chamadas repetidas de efeitos duplicados e não presumirá garantia de envio único em provedores reais.
+O ambiente funcional utiliza um banco com esquema existente. Para um volume vazio, prepare o esquema compatível com as entidades antes de iniciar a API; a automatização dessa preparação ainda precisa ser concluída para uma reconstrução integral do zero. Não substitua `validate` por `create` sobre um banco com dados.
 
-O PostgreSQL será compartilhado entre a API e o serviço extraído na variante C, representando uma etapa intermediária de migração. O serviço extraído terá acesso apenas aos dados de notificação.
+### 4. Construir as imagens
 
-Essa escolha limita o esforço de implementação e concentra a comparação na separação dos processos. A dependência do banco permanecerá comum: a extração não será interpretada como isolamento contra falhas do PostgreSQL.
+Encerre as aplicações no IntelliJ para liberar as portas. Na pasta do OrderLab:
 
-## Avaliação experimental planejada
+```bash
+docker compose config --quiet
+docker buildx bake -f docker-compose.yaml --allow=network.host --load orderlab notification-simulator
+docker image inspect orderlab-app:latest notification-simulator-app:latest --format '{{.RepoTags}}'
+```
 
-- Tempo de resposta das operações, com foco no percentil 95;
-- vazão e taxa de erros;
-- consumo de CPU e memória;
-- tempo entre a criação do pedido e a conclusão da notificação;
-- tamanho da fila, perdas e duplicações;
-- comportamento diante de falhas de processo;
-- esforço documentado de preparação, implantação e alterações padronizadas.
+Os Dockerfiles compilam o JAR com Maven 3.9/JDK 21 e executam com JRE 21. A construção usa `-DskipTests`: não executa os testes, mas compila o código de teste.
 
-Taxas de carga, duração, aquecimento e limites de avaliação serão definidos no piloto, antes da coleta definitiva. Os resultados serão restritos às condições observadas na aplicação experimental.
+O uso de `network: host`, `entitlements` e `--allow=network.host` registra a solução usada neste ambiente WSL para a falha de DNS durante o build. Não é requisito universal das aplicações. A rede dos serviços em execução continua sendo a rede padrão do Compose.
 
-## Plano do primeiro mês
+### 5. Iniciar e conferir
 
-- [ ] Configurar projeto, dependências e ambiente de desenvolvimento.
-- [ ] Criar migrações e entidades.
-- [ ] Implementar criação, consulta e paginação de pedidos.
-- [ ] Implementar validações e tratamento de erros.
-- [ ] Persistir a tarefa na mesma transação do pedido.
-- [ ] Criar o simulador de notificações.
-- [ ] Implementar a tentativa síncrona após a confirmação da transação.
-- [ ] Registrar identificadores, tentativas, estados e tempos.
-- [ ] Verificar o fluxo completo com testes de integração.
-- [ ] Preparar o script inicial de carga e executar o piloto.
-- [ ] Documentar a reconstrução do ambiente.
-- [ ] Preservar uma versão de referência da variante A no Git.
+```bash
+docker compose up -d --no-build
+docker compose ps -a
+docker compose logs -f orderlab notification-simulator
+```
 
-## Critérios de conclusão do monólito base
+`Ctrl+C` encerra apenas a visualização dos logs. O OrderLab aguarda o banco saudável, mas apenas o início do contêiner do simulador; aguarde a inicialização das duas aplicações antes das requisições.
 
-- Pedido, itens e tarefa são gravados ou revertidos juntos.
-- A resposta de criação aguarda a tentativa de notificação.
-- Falha no simulador preserva o pedido e registra o resultado da tentativa.
-- O simulador identifica chamadas repetidas com a mesma chave.
-- Cálculo dos valores, consultas e paginação são verificados.
-- O ambiente pode ser reconstruído com configurações e versões documentadas.
+| Serviço | Acesso pelo computador |
+| --- | --- |
+| OrderLab | http://localhost:9090 |
+| Simulador | http://localhost:9091 |
+| Prometheus | http://localhost:9092 |
+| Grafana | http://localhost:3000 |
+| PostgreSQL | localhost:5432 |
 
-## Execução
+Na rede Docker, a API usa `orderlab-mono-db:5432` e `http://notification-simulator:9091`. O Grafana usa `http://prometheus:9090`. As variáveis do Compose sobrescrevem os endereços locais do `application.yaml`.
 
-As instruções de execução serão adicionadas após a configuração e verificação do projeto. Elas deverão incluir pré-requisitos, variáveis de ambiente, inicialização do banco e do simulador, migrações, execução da aplicação e dos testes.
+## API e verificação funcional
+
+O endpoint de negócio implementado no controller atual é `POST /api/v1/orders`. Consulta, paginação e consulta de tarefas ainda não possuem endpoints implementados.
+
+```bash
+curl -i -X POST http://localhost:9090/api/v1/orders \
+  -H 'Content-Type: application/json' \
+  -d '{"customerName":"piloto-manual-001","customerEmail":"cliente@example.com","items":[{"description":"Produto de teste","quantity":2,"unitPrice":100.00}]}'
+```
+
+O esperado no cenário de sucesso é HTTP 201, pedido com identificador, itens e total 200.00. O header `Idempotency-Key` é enviado pelo OrderLab ao simulador; não é necessário adicioná-lo ao POST de pedidos.
+
+Confira a tarefa diretamente no banco:
+
+```bash
+docker compose exec orderlab-mono-db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+```sql
+SELECT t.id, t.order_id, t.status, t.attempts, t.last_error
+FROM notification_tasks t
+JOIN orders o ON o.id = t.order_id
+WHERE o.customer_name = 'piloto-manual-001'
+ORDER BY t.id DESC;
+```
+
+Em condições normais, a tarefa termina `COMPLETED` com uma tentativa. HTTP 201 sozinho não comprova sucesso da notificação. Use `\q` para sair do psql.
+
+## Prometheus e Grafana
+
+Confira `/actuator/health` e `/actuator/prometheus` nas portas 9090 e 9091. Abra http://localhost:9092/targets: os dois alvos devem estar `UP`; a coleta é feita a cada 5 s.
+
+No Grafana, entre com usuário `admin` e a senha `GRAFANA_ADMIN_PASSWORD` da primeira inicialização do volume. Alterar a variável depois não redefine automaticamente a senha já armazenada.
+
+A fonte Prometheus é provisionada automaticamente, mas não há dashboards provisionados. Em Explore, selecione Prometheus e consulte:
+
+```promql
+up
+```
+
+Memória heap em MiB, por aplicação:
+
+```promql
+sum by (application) (jvm_memory_used_bytes{area="heap"}) / 1024 / 1024
+```
+
+CPU reportada pelo processo Java:
+
+```promql
+process_cpu_usage{application="orderlab"} * 100
+```
+
+A heap não representa a memória total do processo ou contêiner. Essa configuração não coleta métricas detalhadas do PostgreSQL ou de todos os contêineres. P95/P99 das requisições continuam sendo coletados pelo k6. Os pilotos anteriores à mudança de computador/ambiente devem ser identificados separadamente.
+
+## Rotina de operação
+
+Depois de alterar código, dependências ou `application.yaml`, reconstrua as imagens pelo comando Bake da etapa 4 e reaplique `docker compose up -d --no-build`.
+
+Depois de alterar atraso/falha no `.env`:
+
+```bash
+docker compose up -d --no-build notification-simulator
+```
+
+Isso recria o simulador quando o ambiente muda e elimina sua memória de idempotência. `docker compose restart` sozinho não reaplica novas variáveis do `.env`.
+
+Depois de editar o arquivo montado do Prometheus:
+
+```bash
+docker compose restart prometheus
+```
+
+Depois de editar o provisionamento do Grafana:
+
+```bash
+docker compose restart grafana
+```
+
+Para encerrar preservando os volumes:
+
+```bash
+docker compose down
+```
+
+Não use `down -v` para uma parada normal: essa opção remove os volumes. Preserve o nome do projeto Compose para reutilizar os volumes existentes.
+
+## Execução pelo IntelliJ ou Maven
+
+Como alternativa, mantenha apenas o PostgreSQL em Docker e execute as duas aplicações localmente, sem disputar portas com suas versões em contêineres. O OrderLab precisa de JDK 21, banco preparado e variáveis `POSTGRES_DB`, `POSTGRES_USER` e `POSTGRES_PASSWORD` na configuração de execução. O `.env` do Compose não é carregado automaticamente pela aplicação Java local.
+
+```bash
+docker compose stop orderlab notification-simulator prometheus grafana
+docker compose up -d orderlab-mono-db
+chmod +x mvnw
+./mvnw spring-boot:run
+```
+
+Inicie também o simulador conforme seu README. No PowerShell, use `.\mvnw.cmd spring-boot:run`. O YAML local usa banco em `localhost:5432` e simulador em `localhost:9091`. A coleta Prometheus incluída aponta para nomes Docker e não atende automaticamente aplicações locais.
+
+## Diagnóstico
+
+| Sintoma | Verificação |
+| --- | --- |
+| `Dockerfile: no such file` | Conferir `build.context` e nome do Dockerfile |
+| `Temporary failure in name resolution` no Maven | Verificar DNS do WSL, contêiner e construtor; a falha precede a compilação |
+| `additional privileges requested` | Usar Bake com `--allow=network.host` conforme a etapa 4 |
+| `No such image` | Confirmar sucesso da construção e do `--load` |
+| `not a directory` em montagem | Conferir extensão `.yml`, caminho e tipo de arquivo com `ls -ld` |
+| Serviço `Exited` | Consultar `docker compose logs --tail=100 NOME_DO_SERVICO` |
+| Alvo Prometheus `DOWN` | Verificar logs, endpoint de métricas e endereço interno configurado |
+| API falha em banco novo | Preparar esquema; `ddl-auto: validate` não cria tabelas |
+
+## Limites e próximos passos
+
+- Implementar consultas/paginação e tratamento de erros personalizado.
+- Automatizar o preparo do esquema em banco vazio.
+- Ampliar verificações automatizadas do fluxo e das transações; o build Docker não as executa.
+- Preparar protocolo de aquecimento, repetições, reconciliação e registro de ambiente para a coleta oficial.
+- Fixar versões/digests das imagens antes das comparações; o Compose atual usa `latest` para Prometheus/Grafana e outras tags móveis.
+- Desenvolver B e C sem atribuir às falhas do banco compartilhado um isolamento que a extração não fornece.
+
+Autenticação, pagamentos, estoque, catálogo e envio real de e-mail ficam fora do escopo atual. A preparação computacional adicional da notificação permanece planejada; não aparece implementada nos serviços enviados.
 
 ## Contexto acadêmico
 
-Projeto de apoio ao TCC do MBA em Engenharia de Software da USP/Esalq, de Lourival Oliveira e Silva Júnior, sob orientação de Renato Godoi da Cruz.
-
-A aplicação, os scripts e os dados experimentais servirão como instrumentos para avaliar a extração gradual de serviços.
+Projeto de apoio ao TCC do MBA em Engenharia de Software da USP/Esalq, de Lourival Oliveira e Silva Júnior, sob orientação de Renato Godoi da Cruz. O escopo e o protocolo poderão receber ajustes após revisão acadêmica.
