@@ -3,6 +3,10 @@ services:
     image: postgres:18
     container_name: orderlab-mono-db
 
+    cpus: "1.0"
+    mem_limit: 1g
+    memswap_limit: 1g
+
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -24,6 +28,11 @@ services:
 
   notification-simulator:
     image: notification-simulator-app
+
+    cpus: "1.0"
+    mem_limit: 512m
+    memswap_limit: 512m
+
     build:
       context: ../notification-simulator
       dockerfile: Dockerfile
@@ -34,12 +43,18 @@ services:
     environment:
       SIMULATOR_DELAY_MS: ${SIMULATOR_DELAY_MS:-1000}
       SIMULATOR_FAIL_ENABLED: ${SIMULATOR_FAIL_ENABLED:-false}
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx256m"
 
     ports:
       - "127.0.0.1:9091:9091"
 
   orderlab:
     image: orderlab-app
+
+    cpus: "1.0"
+    mem_limit: 1g
+    memswap_limit: 1g
+
     build:
       context: .
       dockerfile: Dockerfile
@@ -52,6 +67,7 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       NOTIFICATION_SIMULATOR_BASE_URL: http://notification-simulator:9091
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m"
 
     ports:
       - "127.0.0.1:9090:9090"
@@ -65,11 +81,21 @@ services:
   prometheus:
     image: prom/prometheus:latest
 
+    cpus: "0.5"
+    mem_limit: 512m
+    memswap_limit: 512m
+
     ports:
       - "127.0.0.1:9092:9090"
 
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - type: bind
+        source: ./monitoring/prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+        read_only: true
+        bind:
+          create_host_path: false
+
       - prometheus_data:/prometheus
 
     command:
@@ -80,12 +106,16 @@ services:
   grafana:
     image: grafana/grafana:latest
 
+    cpus: "1.0"
+    mem_limit: 512m
+    memswap_limit: 512m
+
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Defina GRAFANA_ADMIN_PASSWORD}
 
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
 
     volumes:
       - grafana_data:/var/lib/grafana
@@ -100,6 +130,27 @@ services:
     depends_on:
       prometheus:
         condition: service_started
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.21.1
+
+    cpus: "0.25"
+    mem_limit: 128m
+    memswap_limit: 128m
+
+    environment:
+      DATA_SOURCE_USER: postgres_exporter
+      DATA_SOURCE_PASS: ${POSTGRES_EXPORTER_PASSWORD}
+
+    command:
+      - "--datasource.uri=orderlab-mono-db:5432/${POSTGRES_DB}?sslmode=disable"
+
+    ports:
+      - "127.0.0.1:9187:9187"
+
+    depends_on:
+      orderlab-mono-db:
+        condition: service_healthy
 
 volumes:
   orderlab-mono-db_data:
