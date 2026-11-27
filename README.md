@@ -116,7 +116,7 @@ docker compose logs -f orderlab notification-simulator
 | Grafana | http://localhost:3000 |
 | PostgreSQL | localhost:5432 |
 
-Na rede Docker, a API usa `orderlab-mono-db:5432` e `http://notification-simulator:9091`. O Grafana usa `http://prometheus:9090`. As variáveis do Compose sobrescrevem os endereços locais do `application.yaml`.
+Na rede Docker, a API usa `orderlab-db:5432` e `http://notification-simulator:9091`. O Grafana usa `http://prometheus:9090`. As variáveis do Compose sobrescrevem os endereços locais do `application.yaml`.
 
 ## API e verificação funcional
 
@@ -133,7 +133,7 @@ O esperado no cenário de sucesso é HTTP 201, pedido com identificador, itens e
 Confira a tarefa diretamente no banco:
 
 ```bash
-docker compose exec orderlab-mono-db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+docker compose exec orderlab-db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```
 
 ```sql
@@ -210,7 +210,7 @@ Como alternativa, mantenha apenas o PostgreSQL em Docker e execute as duas aplic
 
 ```bash
 docker compose stop orderlab notification-simulator prometheus grafana
-docker compose up -d orderlab-mono-db
+docker compose up -d orderlab-db
 chmod +x mvnw
 ./mvnw spring-boot:run
 ```

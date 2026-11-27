@@ -1,7 +1,7 @@
 services:
-  orderlab-mono-db:
+  orderlab-db:
     image: postgres:18
-    container_name: orderlab-mono-db
+    container_name: orderlab-db
 
     cpus: "1.0"
     mem_limit: 1g
@@ -11,11 +11,19 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_EXPORTER_PASSWORD: ${POSTGRES_EXPORTER_PASSWORD}
 
     ports:
       - "5432:5432"
     volumes:
-      - orderlab-mono-db_data:/var/lib/postgresql
+      - orderlab-db_data_v2:/var/lib/postgresql
+
+      - type: bind
+        source: ./docker/postgres/init/01-create-monitoring-user.sh
+        target: /docker-entrypoint-initdb.d/01-create-monitoring-user.sh
+        read_only: true
+        bind:
+          create_host_path: false
 
     healthcheck:
       test:
@@ -28,6 +36,7 @@ services:
 
   notification-simulator:
     image: notification-simulator-app
+    container_name: notification-simulator
 
     cpus: "1.0"
     mem_limit: 512m
@@ -50,6 +59,7 @@ services:
 
   orderlab:
     image: orderlab-app
+    container_name: orderlab-app
 
     cpus: "1.0"
     mem_limit: 1g
@@ -63,7 +73,7 @@ services:
         - network.host
 
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://orderlab-mono-db:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://orderlab-db:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       NOTIFICATION_SIMULATOR_BASE_URL: http://notification-simulator:9091
@@ -73,13 +83,14 @@ services:
       - "127.0.0.1:9090:9090"
 
     depends_on:
-      orderlab-mono-db:
+      orderlab-db:
         condition: service_healthy
       notification-simulator:
         condition: service_started
 
   prometheus:
     image: prom/prometheus:latest
+    container_name: prometheus
 
     cpus: "0.5"
     mem_limit: 512m
@@ -105,6 +116,7 @@ services:
 
   grafana:
     image: grafana/grafana:latest
+    container_name: grafana
 
     cpus: "1.0"
     mem_limit: 512m
@@ -140,19 +152,19 @@ services:
 
     environment:
       DATA_SOURCE_USER: postgres_exporter
-      DATA_SOURCE_PASS: ${POSTGRES_EXPORTER_PASSWORD}
+      DATA_SOURCE_PASS: "${POSTGRES_EXPORTER_PASSWORD:?Defina POSTGRES_EXPORTER_PASSWORD}"
 
     command:
-      - "--datasource.uri=orderlab-mono-db:5432/${POSTGRES_DB}?sslmode=disable"
+      - "--datasource.uri=orderlab-db:5432/${POSTGRES_DB}?sslmode=disable"
 
     ports:
       - "127.0.0.1:9187:9187"
 
     depends_on:
-      orderlab-mono-db:
+      orderlab-db:
         condition: service_healthy
 
 volumes:
-  orderlab-mono-db_data:
+  orderlab-db_data_v2:
   prometheus_data:
   grafana_data:
